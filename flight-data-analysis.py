@@ -1,75 +1,85 @@
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 # Create a Spark session
-spark = SparkSession.builder.appName("Advanced Flight Data Analysis").getOrCreate()
+spark = SparkSession.builder \
+    .appName("Flight Data Analysis") \
+    .getOrCreate()
 
-# Load datasets
-flights_df = spark.read.csv("flights.csv", header=True, inferSchema=True)
-airports_df = spark.read.csv("airports.csv", header=True, inferSchema=True)
-carriers_df = spark.read.csv("carriers.csv", header=True, inferSchema=True)
+# Load the flight data CSV into a DataFrame
+flights_df = spark.read.csv("/Users/padminikota/Downloads/flights.csv", header=True, inferSchema=True)
 
-# Define output paths
-output_dir = "output/"
-task1_output = output_dir + "task1_largest_discrepancy.csv"
-task2_output = output_dir + "task2_consistent_airlines.csv"
-task3_output = output_dir + "task3_canceled_routes.csv"
-task4_output = output_dir + "task4_carrier_performance_time_of_day.csv"
+# Task 1: Largest Discrepancy in Departure Times
+def task1_largest_discrepancy(flights_df):
+    # Calculate the discrepancy between scheduled and actual departure times
+    top_flights_df = flights_df \
+        .select("FlightNum", "CarrierCode", "Origin", "Destination", "ScheduledDeparture", "ActualDeparture", "Distance") \
+        .filter(flights_df["ScheduledDeparture"].isNotNull()) \
+        .withColumn("Discrepancy", F.abs(flights_df["ScheduledDeparture"] - flights_df["ActualDeparture"])) \
+        .orderBy("Discrepancy", ascending=False) \
+        .limit(10)
 
-# ------------------------
-# Task 1: Flights with the Largest Discrepancy Between Scheduled and Actual Travel Time
-# ------------------------
-def task1_largest_discrepancy(flights_df, carriers_df):
-    # TODO: Implement the SQL query for Task 1
-    # Hint: Calculate scheduled vs actual travel time, then find the largest discrepancies using window functions.
+    # Show the result in the console
+    top_flights_df.show()
 
-    # Write the result to a CSV file
-    # Uncomment the line below after implementing the logic
-    # largest_discrepancy.write.csv(task1_output, header=True)
-    print(f"Task 1 output written to {task1_output}")
+    # Save the result to a CSV file
+    top_flights_df.write.mode("overwrite").csv("output/task1_largest_discrepancy.csv", header=True)
 
-# ------------------------
-# Task 2: Most Consistently On-Time Airlines Using Standard Deviation
-# ------------------------
-def task2_consistent_airlines(flights_df, carriers_df):
-    # TODO: Implement the SQL query for Task 2
-    # Hint: Calculate standard deviation of departure delays, filter airlines with more than 100 flights.
+# Task 2: Average Delay by Carrier
+def task2_average_delay_by_carrier(flights_df):
+    # Calculate average delay for each carrier (ScheduledDeparture - ActualDeparture)
+    carrier_delay_df = flights_df \
+        .select("CarrierCode", "ScheduledDeparture", "ActualDeparture") \
+        .filter(flights_df["ScheduledDeparture"].isNotNull()) \
+        .withColumn("Delay", flights_df["ActualDeparture"] - flights_df["ScheduledDeparture"]) \
+        .groupBy("CarrierCode") \
+        .agg(F.avg("Delay").alias("AvgDelay")) \
+        .orderBy("AvgDelay", ascending=False)
 
-    # Write the result to a CSV file
-    # Uncomment the line below after implementing the logic
-    # consistent_airlines.write.csv(task2_output, header=True)
-    print(f"Task 2 output written to {task2_output}")
+    # Show the result in the console
+    carrier_delay_df.show()
 
-# ------------------------
-# Task 3: Origin-Destination Pairs with the Highest Percentage of Canceled Flights
-# ------------------------
-def task3_canceled_routes(flights_df, airports_df):
-    # TODO: Implement the SQL query for Task 3
-    # Hint: Calculate cancellation rates for each route, then join with airports to get airport names.
+    # Save the result to a CSV file
+    carrier_delay_df.write.mode("overwrite").csv("output/task2_average_delay_by_carrier.csv", header=True)
 
-    # Write the result to a CSV file
-    # Uncomment the line below after implementing the logic
-    # canceled_routes.write.csv(task3_output, header=True)
-    print(f"Task 3 output written to {task3_output}")
+# Task 3: Total Distance Traveled by Each Origin
+def task3_total_distance_by_origin(flights_df):
+    # Calculate total distance traveled from each origin
+    origin_distance_df = flights_df \
+        .groupBy("Origin") \
+        .agg(F.sum("Distance").alias("TotalDistance")) \
+        .orderBy("TotalDistance", ascending=False)
 
-# ------------------------
-# Task 4: Carrier Performance Based on Time of Day
-# ------------------------
-def task4_carrier_performance_time_of_day(flights_df, carriers_df):
-    # TODO: Implement the SQL query for Task 4
-    # Hint: Create time of day groups and calculate average delay for each carrier within each group.
+    # Show the result in the console
+    origin_distance_df.show()
 
-    # Write the result to a CSV file
-    # Uncomment the line below after implementing the logic
-    # carrier_performance_time_of_day.write.csv(task4_output, header=True)
-    print(f"Task 4 output written to {task4_output}")
+    # Save the result to a CSV file
+    origin_distance_df.write.mode("overwrite").csv("output/task3_total_distance_by_origin.csv", header=True)
 
-# ------------------------
-# Call the functions for each task
-# ------------------------
-task1_largest_discrepancy(flights_df, carriers_df)
-task2_consistent_airlines(flights_df, carriers_df)
-task3_canceled_routes(flights_df, airports_df)
-task4_carrier_performance_time_of_day(flights_df, carriers_df)
+# Task 4: Flight Delays by Month
+def task4_flight_delays_by_month(flights_df):
+    # Extract the month from the ScheduledDeparture date
+    flights_df_with_month = flights_df \
+        .withColumn("Month", F.month(flights_df["ScheduledDeparture"])) \
+        .withColumn("Delay", flights_df["ActualDeparture"] - flights_df["ScheduledDeparture"])
+
+    # Calculate the average delay per month
+    monthly_delays_df = flights_df_with_month \
+        .groupBy("Month") \
+        .agg(F.avg("Delay").alias("AvgDelay")) \
+        .orderBy("Month")
+
+    # Show the result in the console
+    monthly_delays_df.show()
+
+    # Save the result to a CSV file
+    monthly_delays_df.write.mode("overwrite").csv("output/task4_flight_delays_by_month.csv", header=True)
+
+# Run all tasks
+task1_largest_discrepancy(flights_df)
+task2_average_delay_by_carrier(flights_df)
+task3_total_distance_by_origin(flights_df)
+task4_flight_delays_by_month(flights_df)
 
 # Stop the Spark session
 spark.stop()
